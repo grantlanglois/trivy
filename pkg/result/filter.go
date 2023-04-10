@@ -28,11 +28,11 @@ const (
 )
 
 // Filter filters out the vulnerabilities
-func Filter(ctx context.Context, result *types.Result, severities []dbTypes.Severity, ignoreUnfixed, includeNonFailures bool,
+func Filter(ctx context.Context, result *types.Result, severities []dbTypes.Severity, ignoreUnfixed, includeIgnored, includeNonFailures bool,
 	ignoreFile, policyFile string, ignoreLicenses []string) error {
 	ignoredIDs := getIgnoredIDs(ignoreFile)
 
-	filteredVulns := filterVulnerabilities(result.Vulnerabilities, severities, ignoreUnfixed, ignoredIDs)
+	filteredVulns := filterVulnerabilities(result.Vulnerabilities, severities, ignoreUnfixed, includeIgnored, ignoredIDs)
 	misconfSummary, filteredMisconfs := filterMisconfigurations(result.Misconfigurations, severities, includeNonFailures, ignoredIDs)
 	result.Secrets = filterSecrets(result.Secrets, severities, ignoredIDs)
 	result.Licenses = filterLicenses(result.Licenses, severities, ignoreLicenses)
@@ -54,7 +54,7 @@ func Filter(ctx context.Context, result *types.Result, severities []dbTypes.Seve
 }
 
 func filterVulnerabilities(vulns []types.DetectedVulnerability, severities []dbTypes.Severity,
-	ignoreUnfixed bool, ignoredIDs []string) []types.DetectedVulnerability {
+	ignoreUnfixed bool, includeIgnored bool, ignoredIDs []string) []types.DetectedVulnerability {
 	uniqVulns := make(map[string]types.DetectedVulnerability)
 	for _, vuln := range vulns {
 		if vuln.Severity == "" {
@@ -66,11 +66,22 @@ func filterVulnerabilities(vulns []types.DetectedVulnerability, severities []dbT
 				continue
 			}
 
-			// Ignore unfixed vulnerabilities
+			// Ignore unfixed vulnerabilities. If includeIgnored is set to true, they are kept in the results
+			//but marked as ignored in the report
 			if ignoreUnfixed && vuln.FixedVersion == "" {
-				continue
+				if includeIgnored {
+					vuln.Ignored = true
+				} else {
+					continue
+				}
+
 			} else if slices.Contains(ignoredIDs, vuln.VulnerabilityID) {
-				continue
+				if includeIgnored {
+					vuln.Ignored = true
+				} else {
+					continue
+				}
+
 			}
 
 			// Check if there is a duplicate vulnerability

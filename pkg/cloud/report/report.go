@@ -76,6 +76,7 @@ func Write(rep *Report, opt flag.Options, fromCache bool) error {
 				opt.Severities,
 				false,
 				false,
+				false,
 				"",
 				"",
 				nil,

@@ -22,6 +22,7 @@ func TestClient_Filter(t *testing.T) {
 		//secrets       []ftypes.SecretFinding
 		severities     []dbTypes.Severity
 		ignoreUnfixed  bool
+		includeIgnored bool
 		ignoreFile     string
 		policyFile     string
 		ignoreLicenses []string
@@ -218,6 +219,167 @@ func TestClient_Filter(t *testing.T) {
 				ignoreUnfixed: true,
 			},
 			wantVulns: []types.DetectedVulnerability{},
+		},
+		{
+			name: "happy path with ignore-unfixed and include-ignored",
+			args: args{
+				result: types.Result{
+					Vulnerabilities: []types.DetectedVulnerability{
+						{
+							VulnerabilityID:  "CVE-2018-0002",
+							PkgName:          "bar",
+							InstalledVersion: "1.2.3",
+							FixedVersion:     "",
+							Vulnerability: dbTypes.Vulnerability{
+								Severity: dbTypes.SeverityHigh.String(),
+							},
+						},
+					},
+				},
+				severities:     []dbTypes.Severity{dbTypes.SeverityHigh},
+				ignoreUnfixed:  true,
+				includeIgnored: true,
+			},
+			wantVulns: []types.DetectedVulnerability{
+				{
+					VulnerabilityID:  "CVE-2018-0002",
+					PkgName:          "bar",
+					InstalledVersion: "1.2.3",
+					FixedVersion:     "",
+					Vulnerability: dbTypes.Vulnerability{
+						Severity: dbTypes.SeverityHigh.String(),
+					},
+					Ignored: true,
+				},
+			},
+		},
+		{
+			name: "happy path with ignore-file and include-ignored",
+			args: args{
+				result: types.Result{
+					Vulnerabilities: []types.DetectedVulnerability{
+						{
+							// this vulnerability is ignored
+							VulnerabilityID:  "CVE-2019-0001",
+							PkgName:          "foo",
+							InstalledVersion: "1.2.3",
+							FixedVersion:     "1.2.4",
+							Vulnerability: dbTypes.Vulnerability{
+								Severity: dbTypes.SeverityLow.String(),
+							},
+						},
+						{
+							// this vulnerability is ignored
+							VulnerabilityID:  "CVE-2019-0002",
+							PkgName:          "foo",
+							InstalledVersion: "1.2.3",
+							FixedVersion:     "1.2.4",
+							Vulnerability: dbTypes.Vulnerability{
+								Severity: dbTypes.SeverityLow.String(),
+							},
+						},
+						{
+							VulnerabilityID:  "CVE-2019-0003",
+							PkgName:          "foo",
+							InstalledVersion: "1.2.3",
+							FixedVersion:     "1.2.4",
+							Vulnerability: dbTypes.Vulnerability{
+								Severity: dbTypes.SeverityLow.String(),
+							},
+						},
+					},
+				},
+				severities:     []dbTypes.Severity{dbTypes.SeverityLow},
+				ignoreUnfixed:  false,
+				includeIgnored: true,
+				ignoreFile:     "testdata/.trivyignore",
+			},
+
+			wantVulns: []types.DetectedVulnerability{
+				{
+					// this vulnerability is ignored
+					VulnerabilityID:  "CVE-2019-0001",
+					PkgName:          "foo",
+					InstalledVersion: "1.2.3",
+					FixedVersion:     "1.2.4",
+					Vulnerability: dbTypes.Vulnerability{
+						Severity: dbTypes.SeverityLow.String(),
+					},
+					Ignored: true,
+				},
+				{
+					// this vulnerability is ignored
+					VulnerabilityID:  "CVE-2019-0002",
+					PkgName:          "foo",
+					InstalledVersion: "1.2.3",
+					FixedVersion:     "1.2.4",
+					Vulnerability: dbTypes.Vulnerability{
+						Severity: dbTypes.SeverityLow.String(),
+					},
+					Ignored: true,
+				},
+				{
+					VulnerabilityID:  "CVE-2019-0003",
+					PkgName:          "foo",
+					InstalledVersion: "1.2.3",
+					FixedVersion:     "1.2.4",
+					Vulnerability: dbTypes.Vulnerability{
+						Severity: dbTypes.SeverityLow.String(),
+					},
+				},
+			},
+		},
+		{
+			name: "happy path with a policy file",
+			args: args{
+				result: types.Result{
+					Vulnerabilities: []types.DetectedVulnerability{
+						{
+							VulnerabilityID:  "CVE-2019-0001",
+							PkgName:          "foo",
+							InstalledVersion: "1.2.3",
+							FixedVersion:     "1.2.4",
+							Vulnerability: dbTypes.Vulnerability{
+								Severity: dbTypes.SeverityLow.String(),
+							},
+						},
+						{
+							// this vulnerability is ignored
+							VulnerabilityID:  "CVE-2019-0002",
+							PkgName:          "foo",
+							InstalledVersion: "1.2.3",
+							FixedVersion:     "1.2.4",
+							Vulnerability: dbTypes.Vulnerability{
+								Severity: dbTypes.SeverityLow.String(),
+							},
+						},
+						{
+							// this vulnerability is ignored
+							VulnerabilityID:  "CVE-2019-0003",
+							PkgName:          "foo",
+							InstalledVersion: "1.2.3",
+							FixedVersion:     "1.2.4",
+							Vulnerability: dbTypes.Vulnerability{
+								Severity: dbTypes.SeverityLow.String(),
+							},
+						},
+					},
+				},
+				severities:    []dbTypes.Severity{dbTypes.SeverityLow},
+				ignoreUnfixed: false,
+				policyFile:    "./testdata/test.rego",
+			},
+			wantVulns: []types.DetectedVulnerability{
+				{
+					VulnerabilityID:  "CVE-2019-0001",
+					PkgName:          "foo",
+					InstalledVersion: "1.2.3",
+					FixedVersion:     "1.2.4",
+					Vulnerability: dbTypes.Vulnerability{
+						Severity: dbTypes.SeverityLow.String(),
+					},
+				},
+			},
 		},
 		{
 			name: "happy path with ignore-file",
@@ -667,7 +829,7 @@ func TestClient_Filter(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := result.Filter(context.Background(), &tt.args.result,
-				tt.args.severities, tt.args.ignoreUnfixed, false, tt.args.ignoreFile, tt.args.policyFile, tt.args.ignoreLicenses)
+				tt.args.severities, tt.args.ignoreUnfixed, tt.args.includeIgnored, false, tt.args.ignoreFile, tt.args.policyFile, tt.args.ignoreLicenses)
 			require.NoError(t, err)
 			assert.Equal(t, tt.wantVulns, tt.args.result.Vulnerabilities)
 			assert.Equal(t, tt.wantMisconfSummary, tt.args.result.MisconfSummary)
